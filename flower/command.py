@@ -40,20 +40,24 @@ class FlowerCommand(Command):
         self.setup_logging()
 
         self.app.loader.import_default_modules()
-        flower = Flower(capp=self.app, options=options, **settings)
-        atexit.register(flower.stop)
+        if '--elasticsearch-index' in argv:
+            from flower.elasticsearch_history import my_monitor
+            my_monitor(self.app)
+        else:
+            flower = Flower(capp=self.app, options=options, **settings)
+            atexit.register(flower.stop)
 
-        def sigterm_handler(signal, frame):
-            logger.info('SIGTERM detected, shutting down')
-            sys.exit(0)
-        signal.signal(signal.SIGTERM, sigterm_handler)
+            def sigterm_handler(signal, frame):
+                logger.info('SIGTERM detected, shutting down')
+                sys.exit(0)
+            signal.signal(signal.SIGTERM, sigterm_handler)
 
-        self.print_banner('ssl_options' in settings)
+            self.print_banner('ssl_options' in settings)
 
-        try:
-            flower.start()
-        except (KeyboardInterrupt, SystemExit):
-            pass
+            try:
+                flower.start()
+            except (KeyboardInterrupt, SystemExit):
+                pass
 
     def handle_argv(self, prog_name, argv=None):
         return self.run_from_argv(prog_name, argv)

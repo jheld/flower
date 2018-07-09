@@ -1,6 +1,7 @@
 from __future__ import absolute_import
 from __future__ import with_statement
 
+import sys
 import time
 import shelve
 import logging
@@ -28,6 +29,14 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
+try:
+    ELASTICSEARCH_URL = str(next(item.split('=')[-1] for item in sys.argv if '--elasticsearch-url' in item))
+except StopIteration:
+    ELASTICSEARCH_URL = 'http://localhost:9200/'
+else:
+    ELASTICSEARCH_URL = ELASTICSEARCH_URL or 'http://localhost:9200/'
+
+
 
 
 class EventsState(State):
@@ -41,7 +50,26 @@ class EventsState(State):
         worker_name = event['hostname']
         event_type = event['type']
 
-        self.counter[worker_name][event_type] += 1
+        if not self.counter[worker_name] and '--elasticsearch-dashboard' in sys.argv:
+            from elasticsearch import Elasticsearch
+            es = Elasticsearch([ELASTICSEARCH_URL, ])
+            from elasticsearch_dsl import Search
+            from elasticsearch_dsl.query import Term
+            s = Search(using=es, index='task')
+            started = s.filter(Term(state='STARTED') & Term(hostname=worker_name)).count()
+            processed = s.filter(Term(state='RECEIVED') & Term(hostname=worker_name)).count()
+            failed = s.filter(Term(state='FAILED') & Term(hostname=worker_name)).count()
+            retried = s.filter(Term(state='RETRIED') & Term(hostname=worker_name)).count()
+            succeeded = s.filter(Term(state='SUCCESS') & Term(hostname=worker_name)).count()
+            self.counter[worker_name]['task-received'] = processed + started + succeeded + failed + retried
+            self.counter[worker_name]['task-started'] = started
+            self.counter[worker_name]['task-succeeded'] = succeeded
+            self.counter[worker_name]['task-retried'] = retried
+            self.counter[worker_name]['task-failed'] = failed
+            if not event_type.startswith('task-'):
+                self.counter[worker_name][event_type] += 1
+        else:
+            self.counter[worker_name][event_type] += 1
 
         # Send event to api subscribers (via websockets)
         classname = api.events.getClassName(event_type)
@@ -51,6 +79,12 @@ class EventsState(State):
 
         # Save the event
         super(EventsState, self).event(event)
+
+        # from .elasticsearch_history import send_to_elastic_search
+        # try:
+        #     send_to_elastic_search(self, event)
+        # except Exception as e:
+        #     print(e)
 
 
 class Events(threading.Thread):

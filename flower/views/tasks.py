@@ -1,8 +1,12 @@
 from __future__ import absolute_import
 
+import sys
+import time
 from functools import total_ordering
 import copy
 import logging
+
+from flower.utils.search import parse_search_terms
 
 try:
     from itertools import imap
@@ -16,11 +20,40 @@ from ..utils.tasks import iter_tasks, get_task_by_id, as_dict
 
 logger = logging.getLogger(__name__)
 
+USE_ES = '--elasticsearch' in sys.argv
+
+try:
+    ELASTICSEARCH_URL = str(next(item.split('=')[-1] for item in sys.argv if '--elasticsearch-url' in item))
+except StopIteration:
+    ELASTICSEARCH_URL = 'http://localhost:9200/'
+else:
+    ELASTICSEARCH_URL = ELASTICSEARCH_URL or 'http://localhost:9200/'
+
 
 class TaskView(BaseHandler):
     @web.authenticated
     def get(self, task_id):
-        task = get_task_by_id(self.application.events, task_id)
+        use_es = USE_ES
+        if use_es:
+            from elasticsearch.client import Elasticsearch
+            from elasticsearch_dsl.query import Match
+            es_client = Elasticsearch([ELASTICSEARCH_URL, ])
+            if es_client.indices.exists('task'):
+                from elasticsearch_dsl import Search
+                from elasticsearch_dsl.query import Wildcard
+                es_s = Search(using=es_client, index='task')
+                for hit in es_s.query(Match(_id=task_id)):
+                    task = hit
+                    task.uuid = task_id
+                    task.worker = type('worker', (), {})()
+                    task.worker.hostname = task.hostname
+                    break
+                else:
+                    use_es = False
+            else:
+                use_es = False
+        if not use_es:
+            task = get_task_by_id(self.application.events, task_id)
 
         if task is None:
             raise web.HTTPError(404, "Unknown task '%s'" % task_id)
@@ -49,6 +82,12 @@ class Comparable(object):
 
 
 class TasksDataTable(BaseHandler):
+    if USE_ES:
+        from kombu.utils.functional import LRUCache
+        query_cache = LRUCache(limit=1000)
+    else:
+        query_cache = None
+
     @web.authenticated
     def get(self):
         app = self.application
@@ -56,32 +95,155 @@ class TasksDataTable(BaseHandler):
         start = self.get_argument('start', type=int)
         length = self.get_argument('length', type=int)
         search = self.get_argument('search[value]', type=str)
+        use_es = USE_ES
 
         column = self.get_argument('order[0][column]', type=int)
         sort_by = self.get_argument('columns[%s][data]' % column, type=str)
         sort_order = self.get_argument('order[0][dir]', type=str) == 'desc'
+        if use_es:
+            from elasticsearch.client import Elasticsearch, TransportError
+            es_client = Elasticsearch([ELASTICSEARCH_URL, ])
+            try:
+                from elasticsearch_dsl import Search
+                from elasticsearch_dsl.query import Wildcard, Match, Terms
+                es_s = Search(using=es_client, index='task')
+                if search:
+                    search_terms = parse_search_terms(search or {})
+                    if search_terms:
+                        if 'args' in search_terms:
+                            s_args = search_terms['args']
+                            arg_queries = None
+                            for s_arg in s_args:
+                                if arg_queries is None:
+                                    arg_queries = Wildcard(args='*'+s_arg+'*')
+                                else:
+                                    arg_queries &= Wildcard(args='*'+s_arg+'*')
+                            es_s = es_s.query(arg_queries)
+                        if 'kwargs' in search_terms:
+                            s_args = search_terms['kwargs']
+                            arg_queries = None
+                            for s_arg, s_v_arg in s_args.items():
+                                if arg_queries is None:
+                                    arg_queries = Wildcard(kwargs='*\'' + s_arg + '\'' + ': ' + s_v_arg + '*')
+                                else:
+                                    arg_queries &= Wildcard(kwargs='*\'' + s_arg + '\'' + ': ' + s_v_arg + '*')
+                            es_s = es_s.query(arg_queries)
+                        if 'result' in search_terms:
+                            es_s = es_s.query(Match(result=search_terms['result']))
+                        if 'state' in search_terms:
+                            es_s = es_s.query(Terms(state=search_terms['state']))
+                        if 'any' in search_terms:
+                            # this is a simple form of the `any` search that flower constructs
+                            es_s = es_s.query(Wildcard(name='*' + search + '*') | Wildcard(hostname='*' + search + '*'))
+                # total_records = es_s.count()
+                if sort_by in ('started', 'received', 'succeeded', 'failed', 'revoked', 'timestamp', ):
+                    sort_by += '_time'
+                sorted_tasks = es_s.sort({sort_by: dict(order='asc' if sort_order else 'desc')})
+                filtered_tasks = []
+                # elastic search window for normal pagination is default at 10000
+                # so if we're over 10000, then we need to hand-find the appropriate next value
+                # and to do this we have 1 major way:
+                # using `search_after` (from this value or a previous search_after)
+                # we can efficiently search deeply into elasticsearch
+                #
+                # If it's our first time and we're going way beyond 10000, then we'll use `search_after`
+                # to efficiently get to the proper spot
+                # And if we have the previous start already cached, we'll use that to find the next start
+                if start + length > 10000:
+                    total_tries = 5
+                    cache_value = None
+                    cache_start = None
+                    if self.query_cache:
+                        for start_offset in range(1, 201):
+                            for try_index in range(total_tries):
+                                cache_value = self.query_cache.get((start - (length * start_offset),
+                                                               length, sort_by, sort_order))
+                                if cache_value:
+                                    cache_start = start - (length * start_offset)
+                                    break
+                                else:
+                                    time.sleep(0.001)
+                            if cache_value:
+                                break
+                    # TODO: handle the case where we grab an older cache key and we need to forward to
+                    # the current search context appropriately (people spamming the `Next` button faster than we
+                    # can compute the next one. We can get old ones if they miss the next one)
+                    # We already retry on the current one, but if we miss out and go earlier, then there could be a bug.
+                    if cache_value:
+                        if cache_start < start - length:
+                            # TODO: validate that this will forward us to the correct current start
+                            for idx in range(cache_start + length, start - length, length):
+                                sorted_tasks = es_s.extra(from_=0,
+                                                          size=length, search_after=cache_value).sort(
+                                    {sort_by: 'asc' if sort_order else 'desc'}, {'_uid': 'desc', }
+                                )
+                                cache_value = sorted_tasks.execute().hits.hits[-1]['sort']
+                        sorted_tasks = es_s.extra(from_=0, size=length, search_after=cache_value).sort(
+                            {sort_by: 'asc' if not sort_order else 'desc'}, {'_uid': 'desc', }).execute().hits
+                    else:
+                        last_normal_hits = sorted_tasks.extra(from_=9999, size=1).execute().hits.hits
+                        if last_normal_hits:
+                            last_hit = last_normal_hits[0]
+                            sorted_tasks = es_s.extra(from_=0, size=length,
+                                                      search_after=[last_hit['sort'][0],
+                                                                    'task#' + last_hit['_id']]).sort(
+                                {sort_by: 'asc' if sort_order else 'desc'}, {'_uid': 'desc', })
+                            hits = sorted_tasks.execute().hits.hits
+                            if len(hits) + 10000 < start:
+                                # may be a bug in here where we have no hits because of a logic error in here
+                                # we could get more efficient by forwarding with a higher `length` until we get
+                                # to where we need to be
+                                for idx in range(9999+length, start + length, length):
+                                    hits = sorted_tasks.execute().hits.hits
+                                    sorted_tasks = es_s.extra(from_=0,
+                                                              size=length, search_after=hits[-1]['sort']).sort(
+                                        {sort_by: 'asc' if sort_order else 'desc'}, {'_uid': 'desc', }
+                                    )
+                            sorted_tasks = sorted_tasks.execute().hits
+                else:
+                    sorted_tasks = sorted_tasks.extra(from_=start, size=length).execute().hits
+                last_task = None
+                total_records = sorted_tasks.total
+                for task in sorted_tasks.hits:
+                    task_dict = task.get('_source')
+                    task_dict['uuid'] = task['_id']
+                    if task_dict.get('worker'):
+                        task_dict['worker'] = task_dict['hostname']
+                    else:
+                        task_dict['worker'] = task_dict.get('hostname')
+                    filtered_tasks.append(task_dict)
+                    last_task = task
+                records_filtered = sorted_tasks.total
+                if start + length > 10000:
+                    # may be a bug in here --> last_task may be `None` by mistake
+                    self.query_cache[(start, length, sort_by, sort_order)] = last_task.get('sort')
+            except TransportError:
+                logger.exception('Issue getting elastic search task data; falling back to in memory')
+                use_es = False
+        if not use_es:
+            def key(item):
+                return Comparable(getattr(item[1], sort_by))
 
-        def key(item):
-            return Comparable(getattr(item[1], sort_by))
+            sorted_tasks = sorted(
+                iter_tasks(app.events, search=search),
+                key=key,
+                reverse=sort_order
+            )
+            total_records = len(sorted_tasks)
 
-        sorted_tasks = sorted(
-            iter_tasks(app.events, search=search),
-            key=key,
-            reverse=sort_order
-        )
+            filtered_tasks = []
+            records_filtered = len(sorted_tasks)
 
-        filtered_tasks = []
+            for task in sorted_tasks[start:start + length]:
+                task_dict = as_dict(self.format_task(task)[1])
+                if task_dict.get('worker'):
+                    task_dict['worker'] = task_dict['worker'].hostname
 
-        for task in sorted_tasks[start:start + length]:
-            task_dict = as_dict(self.format_task(task)[1])
-            if task_dict.get('worker'):
-                task_dict['worker'] = task_dict['worker'].hostname
-
-            filtered_tasks.append(task_dict)
+                filtered_tasks.append(task_dict)
 
         self.write(dict(draw=draw, data=filtered_tasks,
-                        recordsTotal=len(sorted_tasks),
-                        recordsFiltered=len(sorted_tasks)))
+                        recordsTotal=total_records,
+                        recordsFiltered=records_filtered))  # bug?
 
     @web.authenticated
     def post(self):

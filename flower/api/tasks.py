@@ -2,6 +2,7 @@ from __future__ import absolute_import
 
 import json
 import logging
+import sys
 
 from datetime import datetime
 from threading import Thread
@@ -386,6 +387,24 @@ class GetQueueLengths(BaseTaskHandler):
         self.write({'active_queues': queues})
 
 
+USE_ES = False
+if '--elasticsearch' in sys.argv:
+    USE_ES = True
+
+es = None
+if USE_ES:
+    from elasticsearch import Elasticsearch, TransportError
+
+    try:
+        ELASTICSEARCH_URL = str(next(item.split('=')[-1] for item in sys.argv if '--elasticsearch-url' in item))
+    except StopIteration:
+        ELASTICSEARCH_URL = 'http://localhost:9200/'
+    else:
+        ELASTICSEARCH_URL = ELASTICSEARCH_URL or 'http://localhost:9200/'
+
+    es = Elasticsearch([ELASTICSEARCH_URL, ])
+
+
 class ListTasks(BaseTaskHandler):
     @web.authenticated
     def get(self):
@@ -487,16 +506,40 @@ List tasks
         worker = worker if worker != 'All' else None
         type = type if type != 'All' else None
         state = state if state != 'All' else None
-
+        use_es = USE_ES
         result = []
-        for task_id, task in tasks.iter_tasks(
-                app.events, limit=limit, type=type,
-                worker=worker, state=state,
-                received_start=received_start,
-                received_end=received_end):
-            task = tasks.as_dict(task)
-            task.pop('worker', None)
-            result.append((task_id, task))
+        if use_es:
+            from elasticsearch_dsl import Search
+            from elasticsearch_dsl.query import Terms, Term, Match, Range
+            s = Search(using=es, index='task')
+            try:
+                if worker:
+                    s = s.filter(Term(hostname=worker))
+                if type:
+                    s = s.filter(Term(name=type))
+                if state:
+                    s = s.filter(Term(state=state))
+                if received_start:
+                    s = s.filter(Range(received_time=dict(gt=received_start)))
+                if received_end:
+                    s = s.filter(Range(received_time=dict(lt=received_end)))
+                if limit is not None:
+                    s = s.extra(size=limit)
+                hit_dicts = s.execute().hits.hits
+                for hit_dict in hit_dicts:
+                    result.append((hit_dict['_id'], hit_dict['_source']))
+            except TransportError as e:
+                print(e)
+                use_es = False
+        if not use_es:
+            for task_id, task in tasks.iter_tasks(
+                    app.events, limit=limit, type=type,
+                    worker=worker, state=state,
+                    received_start=received_start,
+                    received_end=received_end):
+                task = tasks.as_dict(task)
+                task.pop('worker', None)
+                result.append((task_id, task))
         self.write(dict(result))
 
 

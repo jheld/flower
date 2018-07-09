@@ -2,3 +2,6 @@ celery>=3.1.0
 tornado>=4.2.0,<5.0.0
 babel>=1.0
 pytz
+elasticsearch>=5.4,<6.4
+elasticsearch_dsl>=5.4,<6.4
+requests>=2.13,<3
