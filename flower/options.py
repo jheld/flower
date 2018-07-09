@@ -68,6 +68,12 @@ define("auth_provider", default=None, type=str, help="auth handler class")
 define("url_prefix", type=str, help="base url prefix")
 define("task_runtime_metric_buckets", type=float, default=Histogram.DEFAULT_BUCKETS,
        multiple=True, help="histogram latency bucket value")
+define("elasticsearch", type=bool, default=False)
+define("elasticsearch_index_bulk_size", type=int, default=200)
+define("elasticsearch_index_timeout", type=int, default=10)
+define("elasticsearch_day_retention", type=int, default=21)
+define("elasticsearch_url", type=str, default="http://localhost:9200/")
+define("elasticsearch_dashboard", type=bool, default=False)
 
 
 default_options = options
