@@ -33,7 +33,7 @@ else:
 class TaskView(BaseHandler):
     @web.authenticated
     def get(self, task_id):
-        use_es = USE_ES
+        use_es = self.get_argument('es', type=bool, default=USE_ES)
         if use_es:
             from elasticsearch.client import Elasticsearch
             from elasticsearch_dsl.query import Match
@@ -81,6 +81,10 @@ class Comparable(object):
             return self.value is None
 
 
+class DoNotUseElasticSearchHistoryError(Exception):
+    pass
+
+
 class TasksDataTable(BaseHandler):
     if USE_ES:
         from kombu.utils.functional import LRUCache
@@ -105,11 +109,14 @@ class TasksDataTable(BaseHandler):
             es_client = Elasticsearch([ELASTICSEARCH_URL, ])
             try:
                 from elasticsearch_dsl import Search
-                from elasticsearch_dsl.query import Wildcard, Match, Terms
+                from elasticsearch_dsl.query import Wildcard, Match, Terms, Term
                 es_s = Search(using=es_client, index='task')
                 if search:
                     search_terms = parse_search_terms(search or {})
                     if search_terms:
+                        if 'es' in search_terms:
+                            if search_terms.get('es') == '0':
+                                raise DoNotUseElasticSearchHistoryError()
                         if 'args' in search_terms:
                             s_args = search_terms['args']
                             arg_queries = None
@@ -132,9 +139,20 @@ class TasksDataTable(BaseHandler):
                             es_s = es_s.query(Match(result=search_terms['result']))
                         if 'state' in search_terms:
                             es_s = es_s.query(Terms(state=search_terms['state']))
+                        if search_terms.get('uuid'):
+                            es_s = es_s.query(Term(**{'_id': search_terms['uuid']}))
+                            # if searching by `uuid`, then no need to search by `any`.
+                            search_terms.pop('any', None)
                         if 'any' in search_terms:
                             # this is a simple form of the `any` search that flower constructs
-                            es_s = es_s.query(Wildcard(name='*' + search + '*') | Wildcard(hostname='*' + search + '*'))
+                            es_id_query = es_s.filter(Term(**{'_id': search}))
+                            id_hits = es_id_query.execute().hits.hits
+                            if id_hits:
+                                es_s = es_id_query
+                            else:
+                                es_s = es_s.query(Wildcard(name='*' + search + '*') |
+                                                  Wildcard(hostname='*' + search + '*'))
+
                 # total_records = es_s.count()
                 if sort_by in ('started', 'received', 'succeeded', 'failed', 'revoked', 'timestamp', ):
                     sort_by += '_time'
@@ -219,6 +237,8 @@ class TasksDataTable(BaseHandler):
                     self.query_cache[(start, length, sort_by, sort_order)] = last_task.get('sort')
             except TransportError:
                 logger.exception('Issue getting elastic search task data; falling back to in memory')
+                use_es = False
+            except DoNotUseElasticSearchHistoryError:
                 use_es = False
         if not use_es:
             def key(item):

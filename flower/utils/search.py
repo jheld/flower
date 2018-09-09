@@ -26,6 +26,10 @@ def parse_search_terms(raw_search_value):
             if 'state' not in parsed_search:
                 parsed_search['state'] = []
             parsed_search['state'].append(preprocess_search_value(query_part[len('state:'):]))
+        elif query_part.startswith('es:'):
+            parsed_search['es'] = preprocess_search_value(query_part[len('es:'):])
+        elif query_part.startswith('uuid:'):
+            parsed_search['uuid'] = preprocess_search_value(query_part[len('uuid:'):])
         else:
             parsed_search['any'] = preprocess_search_value(query_part)
     return parsed_search

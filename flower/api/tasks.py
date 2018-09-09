@@ -499,14 +499,16 @@ List tasks
         worker = self.get_argument('workername', None)
         type = self.get_argument('taskname', None)
         state = self.get_argument('state', None)
+        use_es = self.get_argument('es', USE_ES)
         received_start = self.get_argument('received_start', None)
         received_end = self.get_argument('received_end', None)
+        root_id = self.get_argument('root_id', None)
+        parent_id = self.get_argument('parent_id', None)
 
         limit = limit and int(limit)
         worker = worker if worker != 'All' else None
         type = type if type != 'All' else None
         state = state if state != 'All' else None
-        use_es = USE_ES
         result = []
         if use_es:
             from elasticsearch_dsl import Search
@@ -519,6 +521,10 @@ List tasks
                     s = s.filter(Term(name=type))
                 if state:
                     s = s.filter(Term(state=state))
+                if root_id:
+                    s = s.filter(Term(root_id=root_id))
+                if parent_id:
+                    s = s.filter(Term(parent_id=parent_id))
                 if received_start:
                     s = s.filter(Range(received_time=dict(gt=received_start)))
                 if received_end:
