@@ -2,7 +2,6 @@ from __future__ import absolute_import
 
 import json
 import logging
-import sys
 
 from datetime import datetime
 from threading import Thread
@@ -17,6 +16,7 @@ from celery.result import AsyncResult
 from celery.contrib.abortable import AbortableAsyncResult
 from celery.backends.base import DisabledBackend
 
+from ..options import options
 from ..utils import tasks
 from ..views import BaseHandler
 from ..utils.broker import Broker
@@ -387,24 +387,6 @@ class GetQueueLengths(BaseTaskHandler):
         self.write({'active_queues': queues})
 
 
-USE_ES = False
-if '--elasticsearch' in sys.argv:
-    USE_ES = True
-
-es = None
-if USE_ES:
-    from elasticsearch import Elasticsearch, TransportError
-
-    try:
-        ELASTICSEARCH_URL = str(next(item.split('=')[-1] for item in sys.argv if '--elasticsearch-url' in item))
-    except StopIteration:
-        ELASTICSEARCH_URL = 'http://localhost:9200/'
-    else:
-        ELASTICSEARCH_URL = ELASTICSEARCH_URL or 'http://localhost:9200/'
-
-    es = Elasticsearch([ELASTICSEARCH_URL, ])
-
-
 class ListTasks(BaseTaskHandler):
     @web.authenticated
     def get(self):
@@ -494,6 +476,15 @@ List tasks
 :statuscode 200: no error
 :statuscode 401: unauthorized request
         """
+        USE_ES = options.elasticsearch
+
+        es = None
+        if USE_ES:
+            from elasticsearch import Elasticsearch, TransportError
+
+            ELASTICSEARCH_URL = options.elasticsearch_url
+
+            es = Elasticsearch([ELASTICSEARCH_URL, ])
         app = self.application
         limit = self.get_argument('limit', None)
         worker = self.get_argument('workername', None)

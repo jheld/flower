@@ -1,12 +1,13 @@
+from __future__ import absolute_import
+
 import json
 import logging
-import os
-import sys
 import threading
 import time
 import traceback
 from datetime import datetime
 from logging import config
+from .options import options
 
 import elasticsearch
 import pytz
@@ -57,28 +58,10 @@ LOGGING = {
 config.dictConfig(LOGGING)
 
 logger = logging.getLogger('task_logger')
+ELASTICSEARCH_URL = options.elasticsearch_url
+ES_INDEX_TIMEOUT = options.elasticsearch_index_timeout
+ES_INDEX_BULK_SIZE = options.elasticsearch_index_bulk_size
 
-try:
-    ELASTICSEARCH_URL = str(next(item.split('=')[-1] for item in sys.argv if '--elasticsearch-url' in item))
-except StopIteration:
-    ELASTICSEARCH_URL = 'http://localhost:9200/'
-else:
-    ELASTICSEARCH_URL = ELASTICSEARCH_URL or 'http://localhost:9200/'
-ES_INDEX_TIMEOUT = 10
-ES_INDEX_BULK_SIZE = 200
-
-try:
-    ES_INDEX_TIMEOUT = next(int(option.split('--elasticsearch-index-timeout=')[-1] or ES_INDEX_TIMEOUT)
-                            for option in sys.argv if '--elasticsearch-index-timeout' in option)
-except:
-   pass
-
-
-try:
-    ES_INDEX_BULK_SIZE = next(int(option.split('--elasticsearch-index-bulk-size=')[-1] or ES_INDEX_BULK_SIZE)
-                              for option in sys.argv if '--elasticsearch-index-bulk-size' in option)
-except:
-   pass
 
 ES_CLIENT = Elasticsearch(
     [ELASTICSEARCH_URL],
@@ -191,7 +174,7 @@ def es_consumer():
             # time.sleep(0.5)
 
 
-if '--elasticsearch-index' in sys.argv:
+if options.elasticsearch_index:
     es_thread = threading.Thread(target=es_consumer)
     es_thread.daemon = True
     es_thread.start()

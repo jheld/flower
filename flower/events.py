@@ -1,7 +1,6 @@
 from __future__ import absolute_import
 from __future__ import with_statement
 
-import sys
 import time
 import shelve
 import logging
@@ -22,6 +21,8 @@ from celery.events.state import State
 
 from . import api
 
+from .options import options
+
 try:
     from collections import Counter
 except ImportError:
@@ -29,14 +30,6 @@ except ImportError:
 
 
 logger = logging.getLogger(__name__)
-try:
-    ELASTICSEARCH_URL = str(next(item.split('=')[-1] for item in sys.argv if '--elasticsearch-url' in item))
-except StopIteration:
-    ELASTICSEARCH_URL = 'http://localhost:9200/'
-else:
-    ELASTICSEARCH_URL = ELASTICSEARCH_URL or 'http://localhost:9200/'
-
-
 
 
 class EventsState(State):
@@ -50,8 +43,9 @@ class EventsState(State):
         worker_name = event['hostname']
         event_type = event['type']
 
-        if not self.counter[worker_name] and '--elasticsearch-dashboard' in sys.argv:
+        if not self.counter[worker_name] and options.elasticsearch_dashboard:
             from elasticsearch import Elasticsearch
+            ELASTICSEARCH_URL = options.elasticsearch_url
             es = Elasticsearch([ELASTICSEARCH_URL, ])
             from elasticsearch_dsl import Search
             from elasticsearch_dsl.query import Term

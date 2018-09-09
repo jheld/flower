@@ -6,6 +6,7 @@ import sys
 import atexit
 import signal
 import logging
+import time
 
 from pprint import pformat
 
@@ -40,7 +41,10 @@ class FlowerCommand(Command):
         self.setup_logging()
 
         self.app.loader.import_default_modules()
-        if '--elasticsearch-index' in argv:
+        if getattr(self.app.conf, 'timezone', None):
+            os.environ['TZ'] = self.app.conf.timezone
+            time.tzset()
+        if options.elasticsearch_index:
             from flower.elasticsearch_history import my_monitor
             my_monitor(self.app)
         else:
@@ -100,7 +104,6 @@ class FlowerCommand(Command):
 
     def extract_settings(self):
         settings['debug'] = options.debug
-
         if options.cookie_secret:
             settings['cookie_secret'] = options.cookie_secret
 

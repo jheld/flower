@@ -2,7 +2,6 @@ from __future__ import absolute_import
 
 import datetime
 import logging
-import sys
 
 from functools import partial
 try:
@@ -15,13 +14,12 @@ from tornado import gen
 from tornado import websocket
 from tornado.ioloop import PeriodicCallback
 
+from ..options import options
 from ..views import BaseHandler
 from ..api.workers import ListWorkers
 
 
 logger = logging.getLogger(__name__)
-
-USE_ES = '--elasticsearch-dashboard' in sys.argv
 
 
 class DashboardView(BaseHandler):
@@ -31,6 +29,7 @@ class DashboardView(BaseHandler):
     @web.authenticated
     @gen.coroutine
     def get(self):
+        USE_ES = options.elasticsearch_dashboard
         refresh = self.get_argument('refresh', default=False, type=bool)
         json = self.get_argument('json', default=False, type=bool)
 

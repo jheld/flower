@@ -1,28 +1,24 @@
-import sys
+from __future__ import absolute_import
 
 from tornado import web
 
 from elasticsearch import Elasticsearch, TransportError
 from tornado.web import HTTPError
 
+from ..options import options
+
 from ..views import BaseHandler
-
-try:
-    ELASTICSEARCH_URL = str(next(item.split('=')[-1] for item in sys.argv if '--elasticsearch-url' in item))
-except StopIteration:
-    ELASTICSEARCH_URL = 'http://localhost:9200/'
-else:
-    ELASTICSEARCH_URL = ELASTICSEARCH_URL or 'http://localhost:9200/'
-
-es = Elasticsearch([ELASTICSEARCH_URL, ])
 
 
 class ElasticSearchHistoryHandler(BaseHandler):
+    def __init__(self):
+        ELASTICSEARCH_URL = options.elasticsearch_url
+        self.es = Elasticsearch([ELASTICSEARCH_URL, ])
     @web.authenticated
     def post(self, index_name=None):
         index_name = index_name or 'task'
         try:
-            es.indices.refresh(index_name)
+            self.es.indices.refresh(index_name)
         except TransportError as e:
             raise HTTPError(400, 'Invalid option: {}'.format(e))
         else:

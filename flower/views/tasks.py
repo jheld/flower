@@ -1,6 +1,5 @@
 from __future__ import absolute_import
 
-import sys
 import time
 from functools import total_ordering
 import copy
@@ -15,24 +14,18 @@ except ImportError:
 
 from tornado import web
 
+from ..options import options
 from ..views import BaseHandler
 from ..utils.tasks import iter_tasks, get_task_by_id, as_dict
 
 logger = logging.getLogger(__name__)
 
-USE_ES = '--elasticsearch' in sys.argv
-
-try:
-    ELASTICSEARCH_URL = str(next(item.split('=')[-1] for item in sys.argv if '--elasticsearch-url' in item))
-except StopIteration:
-    ELASTICSEARCH_URL = 'http://localhost:9200/'
-else:
-    ELASTICSEARCH_URL = ELASTICSEARCH_URL or 'http://localhost:9200/'
-
 
 class TaskView(BaseHandler):
     @web.authenticated
     def get(self, task_id):
+        USE_ES = options.elasticsearch
+        ELASTICSEARCH_URL = options.elasticsearch_url
         use_es = self.get_argument('es', type=bool, default=USE_ES)
         if use_es:
             from elasticsearch.client import Elasticsearch
@@ -86,11 +79,13 @@ class DoNotUseElasticSearchHistoryError(Exception):
 
 
 class TasksDataTable(BaseHandler):
-    if USE_ES:
-        from kombu.utils.functional import LRUCache
-        query_cache = LRUCache(limit=1000)
-    else:
-        query_cache = None
+    def __init__(self, *args, **kwargs):
+        if options.elasticsearch:
+            from kombu.utils.functional import LRUCache
+            self.query_cache = LRUCache(limit=1000)
+        else:
+            self.query_cache = None
+        super(TasksDataTable, self).__init__(*args, **kwargs)
 
     @web.authenticated
     def get(self):
@@ -99,12 +94,12 @@ class TasksDataTable(BaseHandler):
         start = self.get_argument('start', type=int)
         length = self.get_argument('length', type=int)
         search = self.get_argument('search[value]', type=str)
-        use_es = USE_ES
-
+        use_es = options.elasticsearch
         column = self.get_argument('order[0][column]', type=int)
         sort_by = self.get_argument('columns[%s][data]' % column, type=str)
         sort_order = self.get_argument('order[0][dir]', type=str) == 'desc'
         if use_es:
+            ELASTICSEARCH_URL = options.elasticsearch_url
             from elasticsearch.client import Elasticsearch, TransportError
             es_client = Elasticsearch([ELASTICSEARCH_URL, ])
             try:
