@@ -190,6 +190,22 @@ def send_to_elastic_search(state, event):
     succeeded_time = task.succeeded
     start_time = task.started
 
+    # potentially use the sched module to change it via native python logic
+    active_index_name = 'task-{}'.format(datetime.now(tz=pytz.utc).date().isoformat())
+    global index_name
+    if active_index_name != index_name:
+        try:
+            indices_client.create(index=active_index_name)
+            indices_client.put_alias('task-*', 'task')
+            indices_client.put_mapping(
+                doc_type='task',
+                body=body,
+                index=active_index_name
+            )
+            index_name = active_index_name
+        except TransportError as te:
+            print(traceback.print_exc())
+
     doc_body = {
         'hostname': task.hostname,
         'worker': task.hostname if task.worker else None,
