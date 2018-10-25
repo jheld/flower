@@ -30,20 +30,25 @@ class TaskView(BaseHandler):
         if use_es:
             from elasticsearch.client import Elasticsearch
             from elasticsearch_dsl.query import Match
-            es_client = Elasticsearch([ELASTICSEARCH_URL, ])
-            if es_client.indices.exists('task'):
-                from elasticsearch_dsl import Search
-                from elasticsearch_dsl.query import Wildcard
-                es_s = Search(using=es_client, index='task')
-                for hit in es_s.query(Match(_id=task_id)):
-                    task = hit
-                    task.uuid = task_id
-                    task.worker = type('worker', (), {})()
-                    task.worker.hostname = task.hostname
-                    break
+            from elasticsearch.exceptions import TransportError
+            try:
+                es_client = Elasticsearch([ELASTICSEARCH_URL, ])
+                if es_client.indices.exists('task'):
+                    from elasticsearch_dsl import Search
+                    from elasticsearch_dsl.query import Wildcard
+                    es_s = Search(using=es_client, index='task')
+                    for hit in es_s.query(Match(_id=task_id)):
+                        task = hit
+                        task.uuid = task_id
+                        task.worker = type('worker', (), {})()
+                        task.worker.hostname = task.hostname
+                        break
+                    else:
+                        use_es = False
                 else:
                     use_es = False
-            else:
+            except TransportError:
+                logger.exception('Issue getting elastic search task data; falling back to in memory')
                 use_es = False
         if not use_es:
             task = get_task_by_id(self.application.events, task_id)
