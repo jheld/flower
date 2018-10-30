@@ -22,17 +22,25 @@ logger = logging.getLogger(__name__)
 
 
 class TaskView(BaseHandler):
+    def __init__(self, *args, **kwargs):
+        self.USE_ES = options.elasticsearch
+        self.ELASTICSEARCH_URL = options.elasticsearch_url
+        if self.USE_ES:
+            from elasticsearch.client import Elasticsearch
+            self.es_client = Elasticsearch([self.ELASTICSEARCH_URL, ])
+        else:
+            self.es_client = None
+        super(TaskView, self).__init__(*args, **kwargs)
+
     @web.authenticated
     def get(self, task_id):
-        USE_ES = options.elasticsearch
-        ELASTICSEARCH_URL = options.elasticsearch_url
-        use_es = self.get_argument('es', type=bool, default=USE_ES)
+        use_es = self.get_argument('es', type=bool, default=self.USE_ES)
         if use_es:
             from elasticsearch.client import Elasticsearch
             from elasticsearch_dsl.query import Match
             from elasticsearch.exceptions import TransportError
             try:
-                es_client = Elasticsearch([ELASTICSEARCH_URL, ])
+                es_client = self.es_client
                 if es_client.indices.exists('task'):
                     from elasticsearch_dsl import Search
                     from elasticsearch_dsl.query import Wildcard
@@ -88,8 +96,14 @@ class TasksDataTable(BaseHandler):
         if options.elasticsearch:
             from kombu.utils.functional import LRUCache
             self.query_cache = LRUCache(limit=1000)
+            self.use_es = True
+            self.elasticsearch_url = options.elasticsearch_url
+            from elasticsearch.client import Elasticsearch
+            self.es_client = Elasticsearch([self.elasticsearch_url, ])
         else:
             self.query_cache = None
+            self.elasticsearch_url = None
+            self.use_es = False
         super(TasksDataTable, self).__init__(*args, **kwargs)
 
     @web.authenticated
@@ -99,14 +113,13 @@ class TasksDataTable(BaseHandler):
         start = self.get_argument('start', type=int)
         length = self.get_argument('length', type=int)
         search = self.get_argument('search[value]', type=str)
-        use_es = options.elasticsearch
+        use_es = bool(self.use_es)
         column = self.get_argument('order[0][column]', type=int)
         sort_by = self.get_argument('columns[%s][data]' % column, type=str)
         sort_order = self.get_argument('order[0][dir]', type=str) == 'desc'
         if use_es:
-            ELASTICSEARCH_URL = options.elasticsearch_url
             from elasticsearch.client import Elasticsearch, TransportError
-            es_client = Elasticsearch([ELASTICSEARCH_URL, ])
+            es_client = self.es_client
             try:
                 from elasticsearch_dsl import Search
                 from elasticsearch_dsl.query import Wildcard, Match, Terms, Term
