@@ -23,6 +23,8 @@ from . import api
 
 from .options import options
 
+from collections import defaultdict
+
 try:
     from collections import Counter
 except ImportError:
@@ -47,14 +49,25 @@ class EventsState(State):
             from elasticsearch import Elasticsearch
             ELASTICSEARCH_URL = options.elasticsearch_url
             es = Elasticsearch([ELASTICSEARCH_URL, ])
-            from elasticsearch_dsl import Search
+            from elasticsearch_dsl import Search, MultiSearch
             from elasticsearch_dsl.query import Term
+            ms = MultiSearch(using=es, index="task")
             s = Search(using=es, index='task')
-            started = s.filter(Term(state='STARTED') & Term(hostname=worker_name)).count()
-            processed = s.filter(Term(state='RECEIVED') & Term(hostname=worker_name)).count()
-            failed = s.filter(Term(state='FAILED') & Term(hostname=worker_name)).count()
-            retried = s.filter(Term(state='RETRIED') & Term(hostname=worker_name)).count()
-            succeeded = s.filter(Term(state='SUCCESS') & Term(hostname=worker_name)).count()
+            ms = ms.add(s.filter(Term(state='RECEIVED') & Term(hostname=worker_name)).extra(size=0))
+            ms = ms.add(s.filter(Term(state='STARTED') & Term(hostname=worker_name)).extra(size=0))
+            ms = ms.add(s.filter(Term(state='SUCCESS') & Term(hostname=worker_name)).extra(size=0))
+            ms = ms.add(s.filter(Term(state='FAILED') & Term(hostname=worker_name)).extra(size=0))
+            ms = ms.add(s.filter(Term(state='RETRIED') & Term(hostname=worker_name)).extra(size=0))
+            responses = ms.execute()
+            task_event_keys = ["task-received", "task-started", "task-succeeded", "task-failed", "task-retried"]
+            tasks_info = defaultdict(int)
+            for event_type, resp in zip(task_event_keys, responses):
+                tasks_info[event_type] += resp.hits.total
+            processed = tasks_info["task-received"]
+            started = tasks_info["task-started"]
+            succeeded = tasks_info["task-succeeded"]
+            failed = tasks_info["task-failed"]
+            retried = tasks_info["task-retried"]
             self.counter[worker_name]['task-received'] = processed + started + succeeded + failed + retried
             self.counter[worker_name]['task-started'] = started
             self.counter[worker_name]['task-succeeded'] = succeeded
