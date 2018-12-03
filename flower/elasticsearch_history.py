@@ -270,7 +270,7 @@ def my_monitor(celery_app):
         body=body,
         index=index_name
     )
-    state = celery_app.events.State()
+    state = celery_app.events.State(max_tasks_in_memory=options.max_tasks)
 
     def event_handler(event):
         # task name is sent only with -received event, and state
