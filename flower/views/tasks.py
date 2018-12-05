@@ -1,5 +1,6 @@
 from __future__ import absolute_import
 
+import datetime
 import time
 from functools import total_ordering
 import copy
@@ -122,10 +123,10 @@ class TasksDataTable(BaseHandler):
             es_client = self.es_client
             try:
                 from elasticsearch_dsl import Search
-                from elasticsearch_dsl.query import Wildcard, Match, Terms, Term
+                from elasticsearch_dsl.query import Wildcard, Match, Terms, Term, Range
                 es_s = Search(using=es_client, index='task')
                 if search:
-                    search_terms = parse_search_terms(search or {})
+                    search_terms = parse_search_terms(search or {}, find_time_keys=True)
                     if search_terms:
                         if 'es' in search_terms:
                             if search_terms.get('es') == '0':
@@ -150,6 +151,16 @@ class TasksDataTable(BaseHandler):
                             es_s = es_s.query(arg_queries)
                         if 'result' in search_terms:
                             es_s = es_s.query(Match(result=search_terms['result']))
+                        if 'taskname' in search_terms:
+                            es_s = es_s.query(Terms(name=search_terms['taskname']))
+                        if 'received_start' in search_terms:
+                            es_s = es_s.filter(Range(received_time=dict(gt=datetime.datetime.utcfromtimestamp(search_terms['received_start']).isoformat())))
+                        if 'received_end' in search_terms:
+                            es_s = es_s.filter(Range(received_time=dict(lt=datetime.datetime.utcfromtimestamp(search_terms['received_end']).isoformat())))
+                        if 'started_start' in search_terms:
+                            es_s = es_s.filter(Range(started_time=dict(gt=datetime.datetime.utcfromtimestamp(search_terms['started_start']).isoformat())))
+                        if 'started_end' in search_terms:
+                            es_s = es_s.filter(Range(started_time=dict(lt=datetime.datetime.utcfromtimestamp(search_terms['started_end']).isoformat())))
                         if 'state' in search_terms:
                             es_s = es_s.query(Terms(state=search_terms['state']))
                         if search_terms.get('uuid'):
