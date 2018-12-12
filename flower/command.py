@@ -44,24 +44,20 @@ class FlowerCommand(Command):
         if getattr(self.app.conf, 'timezone', None):
             os.environ['TZ'] = self.app.conf.timezone
             time.tzset()
-        if options.elasticsearch_index:
-            from flower.elasticsearch_history import my_monitor
-            my_monitor(self.app)
-        else:
-            flower = Flower(capp=self.app, options=options, **settings)
-            atexit.register(flower.stop)
+        flower = Flower(capp=self.app, options=options, **settings)
+        atexit.register(flower.stop)
 
-            def sigterm_handler(signal, frame):
-                logger.info('SIGTERM detected, shutting down')
-                sys.exit(0)
-            signal.signal(signal.SIGTERM, sigterm_handler)
+        def sigterm_handler(signal, frame):
+            logger.info('SIGTERM detected, shutting down')
+            sys.exit(0)
+        signal.signal(signal.SIGTERM, sigterm_handler)
 
-            self.print_banner('ssl_options' in settings)
+        self.print_banner('ssl_options' in settings)
 
-            try:
-                flower.start()
-            except (KeyboardInterrupt, SystemExit):
-                pass
+        try:
+            flower.start()
+        except (KeyboardInterrupt, SystemExit):
+            pass
 
     def handle_argv(self, prog_name, argv=None):
         return self.run_from_argv(prog_name, argv)
@@ -154,3 +150,29 @@ class FlowerCommand(Command):
             pformat(sorted(self.app.tasks.keys()))
         )
         logger.debug('Settings: %s', pformat(settings))
+
+
+class IndexerCommand(FlowerCommand):
+    def run_from_argv(self, prog_name, argv=None, **_kwargs):
+        self.apply_env_options()
+        self.apply_options(prog_name, argv)
+
+        self.extract_settings()
+        self.setup_logging()
+
+        self.app.loader.import_default_modules()
+        if getattr(self.app.conf, 'timezone', None):
+            os.environ['TZ'] = self.app.conf.timezone
+            time.tzset()
+        from flower.elasticsearch_history import my_monitor
+
+        def sigterm_handler(signal, frame):
+            logger.info('SIGTERM detected, shutting down')
+            sys.exit(0)
+        signal.signal(signal.SIGTERM, sigterm_handler)
+
+        self.print_banner('ssl_options' in settings)
+        try:
+            my_monitor(self.app)
+        except (KeyboardInterrupt, SystemExit):
+            pass

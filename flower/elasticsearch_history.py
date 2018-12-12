@@ -174,10 +174,9 @@ def es_consumer():
             # time.sleep(0.5)
 
 
-if options.elasticsearch_index:
-    es_thread = threading.Thread(target=es_consumer)
-    es_thread.daemon = True
-    es_thread.start()
+es_thread = threading.Thread(target=es_consumer)
+es_thread.daemon = True
+es_thread.start()
 
 
 def send_to_elastic_search(state, event):
@@ -286,6 +285,7 @@ def my_monitor(celery_app):
             'task-received': event_handler,
             'task-retried': event_handler,
             'task-started': event_handler,
+            'task-sent': event_handler,
             'task-revoked': event_handler,
             '*': state.event,
         })

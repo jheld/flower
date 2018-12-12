@@ -49,6 +49,11 @@ if sys.version_info < (3, 0):
     install_requires.append('futures')
 
 
+EXTRAS_REQUIRE = {
+    "elasticsearch": ["elasticsearch>=5.4,<6.4", "elasticsearch_dsl>=5.4,<6.4", "requests>=2.13,<3", ],
+}
+
+
 setup(
     name='flower',
     version=get_package_version(),
@@ -63,14 +68,17 @@ setup(
     install_requires=install_requires,
     test_suite="tests",
     tests_require=get_requirements('test.txt'),
+    extras_require=EXTRAS_REQUIRE,
     package_data={'flower': ['templates/*', 'static/*.*',
                              'static/**/*.*', 'static/**/**/*.*']},
     entry_points={
         'console_scripts': [
             'flower = flower.__main__:main',
+            'flower-indexer = flower.__indexer__:main',
         ],
         'celery.commands': [
             'flower = flower.command:FlowerCommand',
+            'flower-indexer = flower.command:IndexerCommand',
         ],
     },
 )

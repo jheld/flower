@@ -1,5 +1,7 @@
 from __future__ import absolute_import
 
+import sys
+
 import types
 
 from tornado.options import define
@@ -66,11 +68,11 @@ define("auth_provider", default='flower.views.auth.GoogleAuth2LoginHandler',
        help="auth handler class")
 define("url_prefix", type=str, help="base url prefix")
 define("elasticsearch", type=bool, default=False)
-define("elasticsearch_index", type=bool, default=False)
-define("elasticsearch_index_bulk_size", type=int, default=200)
+if any("flower-indexer" in item for item in sys.argv):
+       define("elasticsearch_index_bulk_size", type=int, default=200)
+       define("elasticsearch_index_timeout", type=int, default=10)
 define("elasticsearch_url", type=str, default="http://localhost:9200/")
 define("elasticsearch_dashboard", type=bool, default=False)
-define("elasticsearch_index_timeout", type=int, default=10)
 
 # deprecated options
 define("inspect", default=False, help="inspect workers", type=bool)
