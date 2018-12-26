@@ -98,6 +98,7 @@ body = {
         'root_id': {'type': 'keyword', },
         'root': {'type': 'keyword', },
         'parent_id': {'type': 'keyword', },
+        'parent': {'type': 'keyword', },
         'name': {'type': 'keyword', },
         'result': {'type': 'keyword', },
         'state': {'type': 'keyword', },
@@ -215,7 +216,7 @@ def send_to_elastic_search(state, event):
         'kwargs': task.kwargs,
         'name': task.name,
         'clock': task.clock,
-        'children': str(task.children) if task.children else None,
+        'children': str(task.children) if task.children is not None else None,
         'expires': task.expires if task.expires else task.expires,
         'eta': task.eta,
         'state': task.state,
@@ -242,6 +243,7 @@ def send_to_elastic_search(state, event):
         'exception': task.exception,
         'traceback': task.traceback,
         'parent_id': task.parent_id,
+        'parent': str(task.parent) if task.parent else None,
         '_fields': task._fields,
     }
     try:
