@@ -37,6 +37,10 @@ def parse_search_terms(raw_search_value, find_time_keys=False):
             parsed_search['es'] = preprocess_search_value(query_part[len('es:'):])
         elif query_part.startswith('uuid:'):
             parsed_search['uuid'] = preprocess_search_value(query_part[len('uuid:'):])
+        elif query_part.startswith('root_id:'):
+            parsed_search['root_id'] = preprocess_search_value(query_part[len('root_id:'):])
+        elif query_part.startswith('parent_id:'):
+            parsed_search['parent_id'] = preprocess_search_value(query_part[len('parent_id:'):])
         if parsed_search:
             find_any = False
         if find_time_keys:
