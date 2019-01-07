@@ -16,6 +16,7 @@ from celery.result import AsyncResult
 from celery.contrib.abortable import AbortableAsyncResult
 from celery.backends.base import DisabledBackend
 
+from flower.api.elasticsearch_history import AlternativeBackendError, list_tasks_elastic_search
 from ..options import options
 from ..utils import tasks
 from ..views import BaseHandler
@@ -478,13 +479,6 @@ List tasks
         """
         USE_ES = options.elasticsearch
 
-        es = None
-        if USE_ES:
-            from elasticsearch import Elasticsearch, TransportError
-
-            ELASTICSEARCH_URL = options.elasticsearch_url
-
-            es = Elasticsearch([ELASTICSEARCH_URL, ])
         app = self.application
         limit = self.get_argument('limit', None)
         worker = self.get_argument('workername', None)
@@ -493,6 +487,8 @@ List tasks
         use_es = self.get_argument('es', USE_ES)
         received_start = self.get_argument('received_start', None)
         received_end = self.get_argument('received_end', None)
+        started_start = self.get_argument('started_start', None)
+        started_end = self.get_argument('started_end', None)
         root_id = self.get_argument('root_id', None)
         parent_id = self.get_argument('parent_id', None)
 
@@ -502,38 +498,18 @@ List tasks
         state = state if state != 'All' else None
         result = []
         if use_es:
-            from elasticsearch_dsl import Search
-            from elasticsearch_dsl.query import Terms, Term, Match, Range
-            s = Search(using=es, index='task')
             try:
-                if worker:
-                    s = s.filter(Term(hostname=worker))
-                if type:
-                    s = s.filter(Term(name=type))
-                if state:
-                    s = s.filter(Term(state=state))
-                if root_id:
-                    s = s.filter(Term(root_id=root_id))
-                if parent_id:
-                    s = s.filter(Term(parent_id=parent_id))
-                if received_start:
-                    s = s.filter(Range(received_time=dict(gt=received_start)))
-                if received_end:
-                    s = s.filter(Range(received_time=dict(lt=received_end)))
-                if limit is not None:
-                    s = s.extra(size=limit)
-                hit_dicts = s.execute().hits.hits
-                for hit_dict in hit_dicts:
-                    result.append((hit_dict['_id'], hit_dict['_source']))
-            except TransportError as e:
-                print(e)
+                result = list_tasks_elastic_search(self)
+            except AlternativeBackendError:
                 use_es = False
         if not use_es:
             for task_id, task in tasks.iter_tasks(
                     app.events, limit=limit, type=type,
                     worker=worker, state=state,
                     received_start=received_start,
-                    received_end=received_end):
+                    received_end=received_end,
+                    started_start=started_start, started_end=started_end,
+                    root_id=root_id, parent_id=parent_id):
                 task = tasks.as_dict(task)
                 task.pop('worker', None)
                 result.append((task_id, task))

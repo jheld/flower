@@ -10,7 +10,8 @@ from celery.events.state import Task
 
 def iter_tasks(events, limit=None, type=None, worker=None, state=None,
                sort_by=None, received_start=None, received_end=None,
-               started_start=None, started_end=None, search=None):
+               started_start=None, started_end=None, search=None,
+               root_id=None, parent_id=None):
     i = 0
     tasks = events.state.tasks_by_timestamp()
     if sort_by is not None:
@@ -26,6 +27,10 @@ def iter_tasks(events, limit=None, type=None, worker=None, state=None,
         if worker and task.worker and task.worker.hostname != worker:
             continue
         if state and task.state != state:
+            continue
+        if root_id and task.root_id != root_id:
+            continue
+        if parent_id and task.parent_id != parent_id:
             continue
         if received_start and task.received and\
                 task.received < convert(received_start):
