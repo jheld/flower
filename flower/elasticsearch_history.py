@@ -155,20 +155,20 @@ def es_consumer():
         except queue.Empty:
             pass
         if es_buffer:
-            for try_idx in range(3):
+            for try_idx in range(5):
                 # should consider implementing retry logic (outside of what the ES library uses)
                 try:
                     bulk(actions=es_buffer, client=ES_CLIENT, stats_only=True)
                 except (elasticsearch.ConnectionError, elasticsearch.ConnectionTimeout, ):
                     time.sleep(pow(2, try_idx))
-                    print(traceback.format_exc())
+                    logger.warning(traceback.format_exc())
                 except elasticsearch.helpers.BulkIndexError:
                     time.sleep(pow(2, try_idx))
-                    print(traceback.format_exc())
+                    logger.warning(traceback.format_exc())
                     break
                 except Exception:
                     es_buffer[:] = []
-                    print(traceback.format_exc())
+                    logger.warning(traceback.format_exc())
                     break
                 else:
                     es_buffer[:] = []
