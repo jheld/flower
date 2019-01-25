@@ -15,6 +15,7 @@ from tornado.options import parse_command_line, parse_config_file
 from tornado.log import enable_pretty_logging
 from celery.bin.base import Command
 
+from flower.indexer_app import IndexerApp
 from . import __version__
 from .app import Flower
 from .urls import settings
@@ -164,7 +165,8 @@ class IndexerCommand(FlowerCommand):
         if getattr(self.app.conf, 'timezone', None):
             os.environ['TZ'] = self.app.conf.timezone
             time.tzset()
-        from flower.elasticsearch_history import my_monitor
+        i_a = IndexerApp(capp=self.app, options=options, **settings)
+        atexit.register(i_a.stop)
 
         def sigterm_handler(signal, frame):
             logger.info('SIGTERM detected, shutting down')
@@ -172,7 +174,22 @@ class IndexerCommand(FlowerCommand):
         signal.signal(signal.SIGTERM, sigterm_handler)
 
         self.print_banner('ssl_options' in settings)
+
         try:
-            my_monitor(self.app)
+            i_a.start()
         except (KeyboardInterrupt, SystemExit):
             pass
+        # from flower.elasticsearch_history import my_monitor
+        #
+        # def sigterm_handler(signal, frame):
+        #     logger.info('SIGTERM detected, shutting down')
+        #     sys.exit(0)
+        # signal.signal(signal.SIGTERM, sigterm_handler)
+        #
+        # self.print_banner('ssl_options' in settings)
+        # try:
+        #     my_monitor(self.app)
+        # except (KeyboardInterrupt, SystemExit):
+        #     pass
+
+
