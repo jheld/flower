@@ -304,6 +304,21 @@ class IndexerEvents(Events):
 
     def __init__(self, capp, db=None, persistent=False,
                  enable_events=True, io_loop=None, **kwargs):
+        global ELASTICSEARCH_URL
+        global ES_INDEX_TIMEOUT
+        global ES_INDEX_BULK_SIZE
+        global ES_CLIENT
+        global indices_client
+        ELASTICSEARCH_URL = capp.conf.elasticsearch_url
+        ES_INDEX_TIMEOUT = capp.conf.elasticsearch_index_timeout
+        ES_INDEX_BULK_SIZE = capp.conf.elasticsearch_index_bulk_size
+
+        ES_CLIENT = Elasticsearch(
+            [ELASTICSEARCH_URL],
+            connection_class=RequestsHttpConnection
+        )
+
+        indices_client = IndicesClient(client=ES_CLIENT)
         super(IndexerEvents, self).__init__(capp=capp, db=db, persistent=persistent,
                                             enable_events=enable_events, io_loop=io_loop,
                                             **kwargs)
