@@ -715,7 +715,7 @@ var flower = (function () {
             return;
         }
 
-        $('#tasks-table').DataTable({
+        var oTable = $('#tasks-table').DataTable({
             rowId: 'uuid',
             searching: true,
             paginate: true,
@@ -726,7 +726,11 @@ var flower = (function () {
             colReorder: true,
             ajax: {
                 type: 'POST',
-                url: url_prefix() + '/tasks/datatable'
+                url: url_prefix() + '/tasks/datatable',
+                data: function (d) {
+                    d.from = $("#datepicker_from").val();
+                    d.to = $("#datepicker_to").val();
+                }
             },
             order: [
                 [7, "asc"]
@@ -843,6 +847,30 @@ var flower = (function () {
                 visible: isColumnVisible('eta')
             }, ],
         });
+
+        $("#datepicker_from").datepicker({
+            showOn: "button",
+            dateFormat: "yy-mm-dd",
+            buttonImage: "images/calendar.gif",
+            buttonImageOnly: false,
+            "onSelect": function(date) {
+              oTable.ajax.reload();
+            }
+          }).keyup(function() {
+            oTable.ajax.reload();
+          });
+
+          $("#datepicker_to").datepicker({
+            showOn: "button",
+            dateFormat: "yy-mm-dd",
+            buttonImage: "images/calendar.gif",
+            buttonImageOnly: false,
+            "onSelect": function(date) {
+              oTable.ajax.reload();
+            }
+          }).keyup(function() {
+            oTable.ajax.reload();
+          });
 
     });
 
