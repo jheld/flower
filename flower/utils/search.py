@@ -29,6 +29,10 @@ def parse_search_terms(raw_search_value, find_time_keys=False):
                 parsed_search['kwargs'] = {}
             key, value = [p.strip() for p in query_part[len('kwargs:'):].split('=')]
             parsed_search['kwargs'][key] = preprocess_search_value(value)
+        elif query_part.startswith("runtime__gte:"):
+            parsed_search["runtime__gte"] = preprocess_search_value(query_part[len("runtime__gte"):])
+        elif query_part.startswith("runtime__lte:"):
+            parsed_search["runtime__lte"] = preprocess_search_value(query_part[len("runtime__lte"):])
         elif query_part.startswith('state'):
             if 'state' not in parsed_search:
                 parsed_search['state'] = []

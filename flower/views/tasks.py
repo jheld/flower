@@ -155,6 +155,10 @@ class TasksDataTable(BaseHandler):
                             es_s = es_s.query(Match(result=search_terms['result']))
                         if 'taskname' in search_terms:
                             es_s = es_s.query(Terms(name=search_terms['taskname']))
+                        if 'runtime__gte' in search_terms:
+                            es_s = es_s.query(Range(runtime=dict(gte=search_terms["runtime__gte"])))
+                        if 'runtime__lte' in search_terms:
+                            es_s = es_s.query(Range(runtime=dict(lte=search_terms["runtime__lte"])))
                         if 'parent_id' in search_terms:
                             es_s = es_s.filter(Term(parent_id=search_terms['parent_id']))
                         if 'root_id' in search_terms:
