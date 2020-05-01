@@ -10,6 +10,7 @@ import traceback
 from datetime import datetime, timedelta, date
 
 from logging import config
+from operator import itemgetter
 
 import elasticsearch
 import pytz
@@ -79,6 +80,7 @@ ELASTICSEARCH_URL = options.elasticsearch_url
 ES_INDEX_TIMEOUT = options.elasticsearch_index_timeout
 ES_INDEX_BULK_SIZE = options.elasticsearch_index_bulk_size
 ES_DAY_RETENTION = options.elasticsearch_day_retention
+ES_UPSERT = options.elasticsearch_upsert
 
 
 ES_CLIENT = Elasticsearch(
@@ -191,7 +193,20 @@ def send_to_elastic_search(state, event):
     # will keep track of this for us.
     if not event['type'].startswith('task-'):
         return
-    task = state.tasks.get(event['uuid'])
+    task = state.tasks.get(event['uuid']) or state.Task(uuid=event["uuid"], cluster_state=state)
+    if not hasattr(task, "hostname") and ES_UPSERT:
+        group, _, subject = event['type'].partition('-')
+        is_client_event = subject == 'sent'
+
+        wfields = itemgetter('hostname', 'timestamp', 'local_received')
+        tfields = itemgetter('uuid', 'hostname', 'timestamp',
+                             'local_received', 'clock')
+        uuid, hostname, timestamp, local_received, clock = tfields(event)
+        task.event(subject, timestamp, local_received, event)
+        task.hostname = event["hostname"]
+    if ES_UPSERT:
+        logger.debug("task merge_rules: {t_m_r}".format(t_m_r=task.merge_rules))
+        keys_to_remove = set(key for state_key, keys in task.merge_rules.items() for key in keys if state_key != task.state)
     received_time = task.received
     succeeded_time = task.succeeded
     start_time = task.started
@@ -261,12 +276,50 @@ def send_to_elastic_search(state, event):
         'parent': str(task.parent) if task.parent else None,
         '_fields': task._fields,
     }
+
+    if ES_UPSERT:
+        if task.state != "SUCCESS":
+            keys_to_remove.add("succeeded")
+            keys_to_remove.add("succeeded_time")
+        if task.state != "RECEIVED":
+            keys_to_remove.add("received")
+            keys_to_remove.add("received_time")
+        if task.state != "STARTED":
+            keys_to_remove.add("started")
+            keys_to_remove.add("started_time")
+        if task.state != "REVOKED":
+            keys_to_remove.add("revoked")
+            keys_to_remove.add("revoked_time")
+        if task.state != "RETRY":
+            keys_to_remove.add("retried")
+            keys_to_remove.add("retried_time")
+        if task.state != "FAILURE":
+            keys_to_remove.add("failed")
+            keys_to_remove.add("failed_time")
+
+        if task.state in ["SUCCESS", "FAILURE"]:
+            keys_to_remove.remove("revoked")
+            keys_to_remove.remove("revoked_time")
+        logger.debug("At state: {state}, Removing keys: {keys_to_remove}".format(state=task.state, keys_to_remove=keys_to_remove))
+        for key in keys_to_remove:
+            doc_body.pop(key, None)
+            # parent_id -> parent, etc
+            doc_body.pop("{key_f}".format(key_f=key.replace('_id', '')), None)
+
     try:
         doc_body['_type'] = 'task'
         doc_body['_op_type'] = 'index'
         doc_body['_index'] = index_name
         doc_body['_id'] = task.uuid
-        es_queue.put(doc_body)
+        queue_entry = doc_body
+        if ES_UPSERT:
+            doc_body['_op_type'] = 'update'
+            doc_body.pop("_op_type")
+            doc_body.pop("_index")
+            doc_body.pop("_id")
+            doc_body.pop("_type")
+            queue_entry = {"doc": doc_body, "doc_as_upsert": True, "_op_type": "update", "_type": "task", "_index": index_name, "_id": task.uuid}
+        es_queue.put(queue_entry)
     except Exception:
         logger.info('{name}[{uuid}] worker: {worker}, received: {received}, '
                     'started: {started}, succeeded: {succeeded}, info={info}'.format(name=task.name,
@@ -316,7 +369,8 @@ class EventsState(State):
             cls.send_message(event)
 
         # Save the event
-        super(EventsState, self).event(event)
+        if not ES_UPSERT:
+            super(EventsState, self).event(event)
         send_to_elastic_search(self, event)
 
 

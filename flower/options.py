@@ -73,6 +73,7 @@ define("elasticsearch_index_timeout", type=int, default=10)
 define("elasticsearch_day_retention", type=int, default=21)
 define("elasticsearch_url", type=str, default="http://localhost:9200/")
 define("elasticsearch_dashboard", type=bool, default=False)
+define("elasticsearch_upsert", type=bool, default=False)
 
 # deprecated options
 define("inspect", default=False, help="inspect workers", type=bool)

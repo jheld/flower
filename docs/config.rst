@@ -353,3 +353,10 @@ elasticsearch_dashboard
 ~~~~~~~~~~~~~~~~~~~~~~~
 
 Will the dashboard initially get its counter values from elasticsearch?
+
+.. _elasticsearch_upsert:
+
+elasticsearch_upsert
+~~~~~~~~~~~~~~~~~~~~
+
+Using the task state merge_rules (and lower RAM) or traditional task lru heap to hold task event updates to index.
