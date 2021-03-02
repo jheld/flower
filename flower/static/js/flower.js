@@ -418,6 +418,95 @@ var flower = (function () {
         return true;
     }
 
+    function isGregorianLeapYear(year) {
+        return year % 400 === 0 || year % 100 !== 0 && year % 4 === 0;
+    }
+
+    function daysInGregorianMonth(year, month) {
+        var days;
+
+        if (month == 2) {
+            days = 28;
+            if (isGregorianLeapYear(year)) {
+                days += 1;
+            }
+        } else {
+            days = 31 - ((month - 1) % 7 % 2);
+        }
+
+        return days;
+    }
+
+    function validateDateString(dateString) {
+        var dateTime,
+            date,
+            time,
+            value,
+            re = /^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/;
+
+        if (typeof dateString !== "string") {
+            return false;
+        }
+
+        if (!dateString.match(re)) {
+            return false
+        }
+
+        dateTime = dateString.split(" ");
+        if (dateTime.length !== 2) {
+            return false;
+        }
+
+        date = dateTime[0].split("-");
+        if (date.length !== 3) {
+            return false;
+        }
+
+        // validate year
+        value = +date[0];
+        if (date[0].length !== 4 || value < -9999 || value > 9999) {
+            return false;
+        }
+
+        // validate month
+        value = +date[1];
+        if (date[1].length !== 2 || value < 1 || value > 12) {
+            return false;
+        }
+
+        // validate date
+        value = +date[2];
+        if (date[2].length !== 2 || value < 1 || value > daysInGregorianMonth(+date[0], +date[1])) {
+            return false;
+        }
+
+        time = dateTime[1].split(":");
+        if (time.length !== 3) {
+            return false;
+        }
+
+        // validate hour
+        value = +time[0];
+        if (time[0].length !== 2 || value < 0 || value > 23) {
+            return false;
+        }
+
+        // validate minutes
+        value = +time[1];
+        if (time[1].length !== 2 || value < 0 || value > 59) {
+            return false;
+        }
+
+        // validate second
+        value = +time[2];
+        if (time[2].length !== 2 || value < 0 || value > 59) {
+            return false;
+        }
+
+        return true;
+    }
+
+
     $.urlParam = function (name) {
         var results = new RegExp('[\\?&]' + name + '=([^&#]*)').exec(window.location.href);
         return (results && results[1]) || 0;
@@ -527,7 +616,7 @@ var flower = (function () {
             return;
         }
 
-        $('#tasks-table').DataTable({
+        var oTable = $('#tasks-table').DataTable({
             rowId: 'uuid',
             searching: true,
             paginate: true,
@@ -538,7 +627,22 @@ var flower = (function () {
             colReorder: true,
             ajax: {
                 type: 'POST',
-                url: url_prefix() + '/tasks/datatable'
+                url: url_prefix() + '/tasks/datatable',
+                data: function (d) {
+                    var from = $("#datetimepicker_from").val(),
+                        to = $("#datetimepicker_to").val();
+
+                    if (!from || !validateDateString(from)) {
+                        from = null;
+                    }
+
+                    if (!to || !validateDateString(to)) {
+                        to = null
+                    }
+
+                    d.from = from;
+                    d.to = to;
+                }
             },
             order: [
                 [7, "asc"]
@@ -656,6 +760,52 @@ var flower = (function () {
             }, ],
         });
 
+        function reevaluateTableDates() {
+            var from = $("#datetimepicker_from").val(),
+                to = $("#datetimepicker_to").val(),
+                fromDate,
+                toDate;
+
+            if (from && to && validateDateString(from) && validateDateString(to)) {
+                fromDate = moment(from, "yyyy-mm-dd hh:ii:ss");
+                toDate = moment(to, "yyyy-mm-dd hh:ii:ss");
+                if (fromDate.diff(toDate) >= 0) {
+                    oTable.clear();
+                } else {
+                    oTable.ajax.reload();
+                }
+            } else {
+                oTable.ajax.reload();
+            }
+        }
+
+        $("#datetimepicker_from").datetimepicker({
+            format: "yyyy-mm-dd hh:ii:ss",
+            todayBtn: true,
+            autoclose: true,
+            forceParse: false,
+        }).on('changeDate', function(ev){
+            reevaluateTableDates();
+        }).keyup(function() {
+            var dateString = $("#datetimepicker_from").val();
+            if (validateDateString(dateString) || !dateString) {
+                reevaluateTableDates();
+            }
+        });
+
+        $("#datetimepicker_to").datetimepicker({
+            format: "yyyy-mm-dd hh:ii:ss",
+            todayBtn: true,
+            autoclose: true,
+            forceParse: false,
+        }).on('changeDate', function(ev){
+              reevaluateTableDates();
+        }).keyup(function() {
+            var dateString = $("#datetimepicker_to").val();
+            if (validateDateString(dateString) || !dateString) {
+                reevaluateTableDates();
+            }
+        });
     });
 
     return {

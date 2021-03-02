@@ -7,6 +7,7 @@ from tornado import web
 
 from ..views import BaseHandler
 from ..utils.tasks import iter_tasks, get_task_by_id, as_dict
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,14 @@ class TasksDataTable(BaseHandler):
         column = self.get_argument('order[0][column]', type=int)
         sort_by = self.get_argument('columns[%s][data]' % column, type=str)
         sort_order = self.get_argument('order[0][dir]', type=str) == 'desc'
+        start_time = self.get_argument('from', type=str)
+        end_time = self.get_argument('to', type=str)
+
+        if start_time:
+            start_time = datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+
+        if end_time:
+            end_time = datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
 
         def key(item):
             return Comparable(getattr(item[1], sort_by))
